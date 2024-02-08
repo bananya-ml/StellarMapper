@@ -1,0 +1,11 @@
+*.csv
+*.parquet
+*.json
+*.pkl
+*.pyc
+*.db
+*.vot
+
+.venv
+.vscode
+__pycache__
