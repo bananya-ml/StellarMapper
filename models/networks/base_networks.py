@@ -4,12 +4,14 @@ from torch.nn import functional as F
 import numpy as np
 from .utility import _instantiate_class, _handle_n_hidden
 
-net_name = ['StarNet']
+net_name = ['StarNet', 'MLPnet', 'ConvSeqEncoder']
 
 
 def get_network(network_name):
     map = {
-        'StarNet': StarNet
+        'StarNet': StarNet,
+        'MLP': MLPnet,
+        'ConvSeqEncoder': ConvSeqEncoder
     }
 
     if network_name in map.keys():

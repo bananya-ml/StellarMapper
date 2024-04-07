@@ -1,55 +1,69 @@
 import torch
-from torch import nn
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 import time
 import numpy as np
 import random
+from collections import Counter
 from tqdm import tqdm
 
 
-class BaseModel(ABC, nn.Module):
-    '''
-    '''
+class BaseModel(metaclass=ABCMeta):
+    def __init__(self, model_name, learning_rate=1e-3, network='MLP', batch_size=32,
+                 device='cuda', epochs=1000, prt_interval=200, val_split=0.8, random_state=42):
+        '''
+        Abstract base class for all models.
 
-    def __init__(self, num_fluxes, num_filters, learning_rate,
-                 network, filter_length, batch_size, pool_length, num_hidden,
-                 num_labels, device, epochs, random_state):
-        super(BaseModel, self).__init__()
+        Parameters:
+        -----------
+        model_name : str
+            Name of the model.
+        learning_rate : float
+            Learning rate for the optimizer.
+        network : str
+            Name of the network.
+        batch_size : int
+            Batch size for training.
+        device : str
+            Device to train the model on. Either 'cpu' or 'cuda'.
+        epochs : int
+            Number of epochs to train the model.
+        prt_interval: int
+            interval at which loss should be printed 
+        random_state : int
+            Random seed for reproducibility.
+        '''
 
-        self.num_fluxes = num_fluxes
-        self.num_filters = num_filters
-        self.filter_length = filter_length
-        self.pool_length = pool_length
-        self.num_hidden = num_hidden
-        self.num_labels = num_labels
-
+        self.model_name = model_name
         self.network = network
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.device = device
         self.epochs = epochs
         self.random_state = random_state
+        self.prt_interval = prt_interval
+        self.val_split = val_split
 
         self.set_seed(self.random_state)
         return
 
     def fit(self, X, y):
         '''
-        '''
-
-
-        print("Starting training...")
-
-        self.train_data = np.array(X)
-        self.train_label = np.array(y)
         
-        self.train_loader, self.net, self.criterion = self.training_prepare(
+        '''
+        print("Starting training...")
+        #print(f"Using {self.device} for training")
+
+        self.train_data = X
+        self.train_label = y
+        
+        self.train_loader, self.val_loader, self.net, self.criterion = self.training_prepare(
             self.train_data, y=self.train_label)
         self._training()
         return
 
     def predict(self, X, y=None):
         '''
+
         '''
 
         self.val_data = np.array(X)
@@ -73,55 +87,53 @@ class BaseModel(ABC, nn.Module):
             return y_pred
 
     def _training(self):
-        '''
-        '''
+
         optimizer = torch.optim.Adam(
-            self.net.parameters(), lr=self.learning_rate)
+            self.net.parameters(), lr=self.learning_rate, weight_decay=0)
 
         self.net.train()
         for epoch in range(self.epochs):
-            t1 = time.time()
-            total_loss = 0
-            cnt = 0
-
-            for batch_x in tqdm(self.train_loader, desc=f'Epoch {epoch+1}/{self.epochs}', unit='batch'):
+            
+            total_loss = 0.0
+            for batch_x in self.train_loader:
+                optimizer.zero_grad()
                 loss = self.training_forward(batch_x, self.net, self.criterion)
-                self.net.zero_grad()
                 loss.backward()
                 optimizer.step()
-
                 total_loss += loss.item()
-                cnt += 1
 
-            t = time.time()-t1
-            print("Epoch: {:3d},  training loss: {:.6f}, time: {:.1f} seconds".format(
-                epoch+1, total_loss/len(self.train_loader), t))
+            train_loss = total_loss/len(self.train_loader)
+            
+            total_loss = 0.0
+            with torch.inference_mode():
+                for batch_x in self.val_loader:
+                    loss = self.training_forward(batch_x, self.net, self.criterion)
+                    total_loss+=loss.item()
+            
+            val_loss = total_loss/len(self.val_loader)
+            
+            if epoch == 0 or ((epoch + 1) % self.prt_interval == 0) or (epoch == self.epochs - 1):
+                print("Epoch: {:3d},  training loss: {:.6f}, validation loss: {:.6f} ".format(
+                            epoch+1, train_loss, val_loss))
         return
 
     def _inference(self):
-        '''
-        '''
-
+        
         self.net.eval()
         for epoch in range(self.epochs):
-            t1 = time.time()
 
             with torch.inference_mode():
 
-                for i, data in enumerate(tqdm(self.test_loader, desc=f'Epoch {epoch+1}/{self.epochs}', unit='batch'), 0):
+                for data in self.test_loader:
                     batch_x, batch_y = data, None
-                    y_pred, loss = self.inference_forward(
+                    y_pred, _ = self.inference_forward(
                         batch_x[0], batch_y, self.net, self.criterion)
 
-            t = time.time()-t1
-            print('Epoch: {:3d}, time:{:.1f} seconds'.format(
-                epoch+1, t))
-
+        print("Finished making predictions!")
         return y_pred
 
     def _validate(self):
-        '''
-        '''
+
         self.net.eval()
         for epoch in range(self.epochs):
             t1 = time.time()
@@ -131,7 +143,7 @@ class BaseModel(ABC, nn.Module):
 
                 for i, data in enumerate(tqdm(self.test_loader, desc=f'Epoch {epoch+1}/{self.epochs}', unit='batch'), 0):
                     batch_x, batch_y = data
-                    y_pred, loss = self.inference_forward(
+                    _, loss = self.inference_forward(
                         batch_x, batch_y, self.net, self.criterion)
                     total_loss += loss.item()
 
@@ -143,6 +155,43 @@ class BaseModel(ABC, nn.Module):
 
         return val_loss
 
+    def classification_report(self, y_true, y_pred):
+        """
+        Generate a classification report with precision, recall, f1-score, and support.
+        
+        Args:
+            y_true (list): Ground truth (correct) target values.
+            y_pred (list): Estimated targets as returned by a classifier.
+            
+        Returns:
+            str: The classification report as a formatted string.
+        """
+        # Calculate the true positives, false positives, and false negatives for each label
+        labels = set(y_true).union(set(y_pred))
+        tp, fp, fn = {}, {}, {}
+        for label in labels:
+            tp[label] = sum(1 for yt, yp in zip(y_true, y_pred) if yt == yp == label)
+            fp[label] = sum(1 for yt, yp in zip(y_true, y_pred) if yt != yp and yp == label)
+            fn[label] = sum(1 for yt, yp in zip(y_true, y_pred) if yt != yp and yt == label)
+        
+        # Calculate the support (number of instances) for each label
+        support = Counter(y_true)
+        
+        # Calculate precision, recall, and f1-score for each label
+        report = ""
+        for label in labels:
+            precision = tp[label] / (tp[label] + fp[label]) if tp[label] + fp[label] != 0 else 0
+            recall = tp[label] / (tp[label] + fn[label]) if tp[label] + fn[label] != 0 else 0
+            f1_score = 2 * precision * recall / (precision + recall) if precision + recall != 0 else 0
+            
+            report += f"Label: {label}\n"
+            report += f"  Precision: {precision:.3f}\n"
+            report += f"  Recall: {recall:.3f}\n"
+            report += f"  F1-Score: {f1_score:.3f}\n"
+            report += f"  Support: {support[label]}\n\n"
+        
+        return report
+    
     @abstractmethod
     def training_prepare(self, X, y):
         pass
