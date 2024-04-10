@@ -1,6 +1,7 @@
 import torch
 from abc import ABCMeta, abstractmethod
 import time
+import os
 import numpy as np
 import random
 from collections import Counter
@@ -9,7 +10,7 @@ from tqdm import tqdm
 
 class BaseModel(metaclass=ABCMeta):
     def __init__(self, model_name, learning_rate=1e-3, network='MLP', batch_size=32,
-                 device='cuda', epochs=1000, prt_interval=200, val_split=0.8, random_state=42):
+                 device='cuda', epochs=1000, weight_decay = 0, prt_interval=200, val_split=0.8, random_state=42):
         '''
         Abstract base class for all models.
 
@@ -27,6 +28,8 @@ class BaseModel(metaclass=ABCMeta):
             Device to train the model on. Either 'cpu' or 'cuda'.
         epochs : int
             Number of epochs to train the model.
+        weight_decay : float
+            weight decay for the optimizer.
         prt_interval: int
             interval at which loss should be printed 
         random_state : int
@@ -42,9 +45,9 @@ class BaseModel(metaclass=ABCMeta):
         self.random_state = random_state
         self.prt_interval = prt_interval
         self.val_split = val_split
+        self.weight_decay = weight_decay
 
         self.set_seed(self.random_state)
-        return
 
     def fit(self, X, y):
         '''
@@ -56,7 +59,7 @@ class BaseModel(metaclass=ABCMeta):
         self.train_data = X
         self.train_label = y
         
-        self.train_loader, self.val_loader, self.net, self.criterion = self.training_prepare(
+        self.train_loader, self.val_loader, self.net, self.criterion, self.optimizer = self.training_prepare(
             self.train_data, y=self.train_label)
         self._training()
         return
@@ -88,18 +91,15 @@ class BaseModel(metaclass=ABCMeta):
 
     def _training(self):
 
-        optimizer = torch.optim.Adam(
-            self.net.parameters(), lr=self.learning_rate, weight_decay=0)
-
         self.net.train()
         for epoch in range(self.epochs):
             
             total_loss = 0.0
             for batch_x in self.train_loader:
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 loss = self.training_forward(batch_x, self.net, self.criterion)
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
                 total_loss += loss.item()
 
             train_loss = total_loss/len(self.train_loader)
@@ -120,6 +120,7 @@ class BaseModel(metaclass=ABCMeta):
     def _inference(self):
         
         self.net.eval()
+        preds = []
         for epoch in range(self.epochs):
 
             with torch.inference_mode():
@@ -127,10 +128,10 @@ class BaseModel(metaclass=ABCMeta):
                 for data in self.test_loader:
                     batch_x, batch_y = data, None
                     y_pred, _ = self.inference_forward(
-                        batch_x[0], batch_y, self.net, self.criterion)
-
+                        batch_x, batch_y, self.net, self.criterion)
+                    preds.append(y_pred)
         print("Finished making predictions!")
-        return y_pred
+        return preds
 
     def _validate(self):
 
@@ -192,6 +193,52 @@ class BaseModel(metaclass=ABCMeta):
         
         return report
     
+    def save_model(self, save_path):
+        """
+        Save the trained model to a file.
+
+        Parameters
+        ----------
+        save_path : str
+            The path where the model will be saved.
+        """
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        model_state = {
+            'model': self.net.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+        }
+
+        save_info_path = os.path.join(save_path, self.model_name + '_model_info.pth')
+        save_state_path = os.path.join(save_path, self.model_name + '_model_state.pth')
+
+        self.save_info(save_info_path)
+        torch.save(model_state, save_state_path)
+
+        print(f"\nModel saved successfully at {save_path}\n")
+   
+    def load_pretrained(self, load_path):
+        """
+        Load a pre-trained model and its relevant information.
+
+        Parameters
+        ----------
+        load_path : str
+            The path from which the model will be loaded.
+        """
+
+        model_info_path = os.path.join(load_path)
+        self.net = self.load_info(model_info_path)
+        
+        model_state_path = os.path.join(load_path, self.model_name + '_model_state.pth')
+        model_state = torch.load(model_state_path)
+        
+        self.net.load_state_dict(model_state['model'])
+
+        print(f"Model loaded successfully from {load_path}")
+        return self.net
+    
     @abstractmethod
     def training_prepare(self, X, y):
         pass
@@ -210,6 +257,14 @@ class BaseModel(metaclass=ABCMeta):
 
     @abstractmethod
     def inference_forward(self, X):
+        pass
+    
+    @abstractmethod
+    def save_info(self):
+        pass
+    
+    @abstractmethod
+    def load_info(self):
         pass
 
     @staticmethod

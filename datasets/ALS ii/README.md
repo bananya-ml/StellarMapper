@@ -1,6 +1,6 @@
 # ALS II catalogue of OB stars
 
-This dataset comes from the paper The Alma catalogue of OB stars – II. A cross-match with Gaia DR2 and an updated map of the solar neighbourhood<sup>[3]</sup>(https://doi.org/10.1093/mnras/stab688). 
+This dataset comes from the paper The Alma catalogue of OB stars – II. A cross-match with Gaia DR2 and an updated map of the solar neighbourhood<sup>[3](https://doi.org/10.1093/mnras/stab688)</sup>. 
 
 ## Catalogue Description
 

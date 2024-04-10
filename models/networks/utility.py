@@ -1,7 +1,8 @@
 import numpy as np
 import warnings
 import importlib
-
+from torch import nn
+import torch
 
 def _instantiate_class(module_name: str, class_name: str):
     module = importlib.import_module(module_name)
@@ -26,3 +27,13 @@ def _handle_n_hidden(n_hidden):
         raise TypeError('n_hidden should be a string or a int.')
 
     return hidden_dim, n_layers
+
+def _init_weights(module):
+    if isinstance(module, nn.Linear):
+        torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        if module.bias is not None:
+            torch.nn.init.zeros_(module.bias)
+    if isinstance(module, nn.Conv1d):
+        nn.init.kaiming_uniform_(module.weight, mode='fan_out', nonlinearity='relu')
+        if module.bias is not None:
+            nn.init.constant_(module.bias, 0)

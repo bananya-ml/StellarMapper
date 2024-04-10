@@ -35,8 +35,8 @@ The `datasets` directory contains organized subdirectories named after the origi
 
 |Model   |Title                                                                            |
 |--------|---------------------------------------------------------------------------------|
-|StarNet |An application of deep learning in the analysis of stellar spectra<sup>[1]</sup>(#sfabbro)|
-|STARCNET|StarcNet: Machine Learning for Star Cluster Identification<sup>[2]</sup>(#gperez)         |
+|StarNet |An application of deep learning in the analysis of stellar spectra<sup>[1](#sfabbro)</sup>|
+|STARCNET|StarcNet: Machine Learning for Star Cluster Identification<sup>[2](#gperez)</sup>         |
 
 ## License
 

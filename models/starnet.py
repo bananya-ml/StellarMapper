@@ -4,6 +4,7 @@ import numpy as np
 from .networks.base_networks import get_network
 from torch.utils.data import DataLoader, TensorDataset
 from .base_model import BaseModel
+import os
 from collections import Counter
 from torch.utils.data.sampler import WeightedRandomSampler
 
@@ -31,11 +32,14 @@ class StarNet(BaseModel):
 
         '''
 
-    def __init__(self, num_fluxes, num_filters=[4, 16], learning_rate=0.001, network='StarNet', filter_length=8, batch_size=32,
-                 pool_length=4, num_hidden=[256, 128], num_labels=3, device='cuda', sampler=None, prt_interval=200, val_split = 0.8,
-                 epochs=100, random_state=42):
+    def __init__(self, num_fluxes=None, num_filters=[4, 16], learning_rate=1e-3, network='StarNet', 
+                 filter_length=8, batch_size=32, pool_length=4, num_hidden=[256, 128], 
+                 num_labels=3, device='cuda', sampler=None, prt_interval=200, weight_decay=0.0,
+                 val_split = 0.8, epochs=100, random_state=42):
         super(StarNet, self).__init__(model_name='StarNet', learning_rate=learning_rate, network=network,
-                                      batch_size=batch_size, device=device, prt_interval=prt_interval, val_split = val_split, epochs=epochs, random_state=random_state
+                                      batch_size=batch_size, device=device, prt_interval=prt_interval,
+                                      weight_decay=weight_decay, val_split=val_split, epochs=epochs, 
+                                      random_state=random_state
                                       )
         self.num_fluxes = num_fluxes
         self.num_filters = num_filters
@@ -44,6 +48,7 @@ class StarNet(BaseModel):
         self.num_hidden = num_hidden
         self.num_labels = num_labels
         self.val_split = val_split
+        self.weight_decay = weight_decay
 
         self.network = network
 
@@ -54,7 +59,6 @@ class StarNet(BaseModel):
         self.epochs = epochs
         self.random_state = random_state
 
-        return
 
     def training_prepare(self, X, y):
         
@@ -90,7 +94,9 @@ class StarNet(BaseModel):
         net = network_class(**network_params).to(self.device)
         print(net)
 
-        return train_loader, val_loader, net, criterion
+        optimizer = torch.optim.Adam(net.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+
+        return train_loader, val_loader, net, criterion, optimizer
 
     def inference_prepare(self, X, y):
         '''
@@ -133,3 +139,67 @@ class StarNet(BaseModel):
             loss = None
 
         return y_pred, loss
+   
+    def save_info(self, path):
+        '''
+        
+        '''
+        model_info = {
+            'input_dims': self.num_fluxes,
+            'num_filters': self.num_filters,
+            'filter_length': self.filter_length,
+            'pool_length': self.pool_length,
+            'num_hidden': self.num_hidden,
+            'num_labels': self.num_labels,
+        }
+
+        torch.save(model_info, os.path.join(path))
+
+    def load_info(self, path):
+        '''
+        
+        '''
+
+        model_info = torch.load(os.path.join(path, self.model_name + '_model_info.pth'))
+
+        self.num_fluxes = model_info['input_dims']
+        self.num_filters = model_info['num_filters']
+        self.filter_length = model_info['filter_length']
+        self.pool_length = model_info['pool_length']
+        self.num_hidden = model_info['num_hidden']
+        self.num_labels = model_info['num_labels']
+
+        network_params = {
+            'num_fluxes': self.num_fluxes,
+            'num_filters': self.num_filters,
+            'filter_length': self.filter_length,
+            'pool_length': self.pool_length,
+            'num_hidden': self.num_hidden,
+            'num_labels': self.num_labels,
+        }
+
+        self.net = get_network(self.network)(**network_params).to(self.device)
+        
+        return self.net
+
+    def save_model(self, save_path):
+        """
+        Save the trained model to a file.
+
+        Parameters
+        ----------
+        save_path : str
+            The path where the model will be saved.
+        """
+        super().save_model(save_path)
+
+    def load_model(self, load_path):
+        """
+        Load a pre-trained model and its relevant information.
+
+        Parameters
+        ----------
+        load_path : str
+            The path from which the model will be loaded.
+        """
+        super().load_model(load_path)

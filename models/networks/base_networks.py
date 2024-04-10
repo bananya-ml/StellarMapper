@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 import numpy as np
-from .utility import _instantiate_class, _handle_n_hidden
+from .utility import _instantiate_class, _handle_n_hidden, _init_weights
 
 net_name = ['StarNet', 'MLPnet', 'ConvSeqEncoder']
 
@@ -21,11 +21,11 @@ def get_network(network_name):
                                   f" Available networks: {map.keys()}")
 
 
-class StarNet(torch.nn.Module):
+class StarNet(nn.Module):
     '''
+    StarNet network constructed from "An application of deep learning in the analysis of stellar spectra"
     '''
-
-    def __init__(self, num_fluxes, num_filters=[4, 16], filter_length=8,
+    def __init__(self, num_fluxes=None, num_filters=[4, 16], filter_length=8,
                  pool_length=4, num_hidden=[256, 128], num_labels=3):
         super(StarNet, self).__init__()
 
@@ -43,6 +43,8 @@ class StarNet(torch.nn.Module):
         self.fc2 = nn.Linear(num_hidden[0], num_hidden[1])
         self.output = nn.Linear(num_hidden[1], num_labels)
 
+        self.apply(_init_weights)
+
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = self.pool(F.relu(self.conv2(x)))
@@ -59,6 +61,117 @@ class StarNet(torch.nn.Module):
         """
         f = mod.forward(torch.autograd.Variable(torch.Tensor(1, *in_size)))
         return f.size()[1:]
+
+class StarcNet(nn.Module):
+    '''
+    StarcNet network constructed from "STARCNET: Machine Learning for Star Cluster Identification"
+    '''
+    def __init__(self, input_dim = 5, size = 32, n=8, image_size = 32, mag_dim = 10):
+        super(StarcNet, self).__init__()
+        self.a1 = 1 # filters multiplier
+        self.a21 = 1
+        self.a2 = 1
+        self.a3 = 1
+        n = 8 # for groupnorm
+        self.sz1 = 32 # size of input image (sz1 x sz1)
+        self.sz = 10 # for secon input size (2*sz x 2*sz) default: 10
+        
+        self.conv01 = ConvBlock(input_dim, 128, n)
+        self.conv02 = ConvBlock(128, 128, n)
+        self.conv03 = ConvBlock(128, 128, n)
+        self.conv04 = ConvBlock(128, 128, n)
+        self.pool0 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
+        self.conv05 = ConvBlock(128, 128, n)
+        self.conv06 = ConvBlock(128, 128, n)
+        self.conv07 = ConvBlock(128, 128, n)
+        self.outblock0 = OutBlock(size, n)
+        
+        self.conv11 = ConvBlock(input_dim, 128, n)
+        self.conv12 = ConvBlock(128, 128, n)
+        self.conv13 = ConvBlock(128, 128, n)
+        self.conv14 = ConvBlock(128, 128, n)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
+        self.conv15 = ConvBlock(128, 128, n)
+        self.conv16 = ConvBlock(128, 128, n)
+        self.conv17 = ConvBlock(128, 128, n)
+        self.outblock1 = OutBlock(size, n)
+
+        self.conv21 = ConvBlock(input_dim, 128, n)
+        self.conv22 = ConvBlock(128, 128, n)
+        self.conv23 = ConvBlock(128, 128, n)
+        self.conv24 = ConvBlock(128, 128, n)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
+        self.conv25 = ConvBlock(128, 128, n)
+        self.conv26 = ConvBlock(128, 128, n)
+        self.conv27 = ConvBlock(128, 128, n)
+        self.outblock2 = OutBlock(size, n)
+
+        self.fc = nn.Linear(384, 4)
+        
+        self.resize = nn.Upsample(size=(self.sz1,self.sz1))
+        
+    def forward(self, x):
+        x0 = x[:,:,:,:]#.unsqueeze(1)
+        x1 = x[:,:,int(self.sz1/2-self.sz):int(self.sz1/2+self.sz), int(self.sz1/2-self.sz):int(self.sz1/2+self.sz)] #.unsqueeze(1)
+        x2 = x[:,:,int(self.sz1/2-self.sz/2):int(self.sz1/2+self.sz/2+1), int(self.sz1/2-self.sz/2):int(self.sz1/2+self.sz/2+1)]#.unsqueeze(1)
+        x1 = self.resize(x1)
+        x2 = self.resize(x2)
+
+        # first conv net
+        out0 = self.conv01(x0)
+        out0 = self.conv02(out0)
+        out0 = self.conv03(out0)
+        out0 = self.pool0(self.conv04(out0))
+        out0 = self.conv05(out0)
+        out0 = self.conv06(out0)
+        out0 = self.conv07(out0)
+        out0 = self.outblock0(out0.view(-1, 128*int(self.sz1/2)*int(self.sz1/2)))
+        
+        # second conv net
+        out1 = self.conv11(x1)
+        out1 = self.conv12(out1)
+        out1 = self.conv13(out1)
+        out1 = self.pool1(self.conv14(out1))
+        out1 = self.conv15(out1)
+        out1 = self.conv16(out1)
+        out1 = self.conv17(out1)
+        out1 = self.outblock1(out1.view(-1, 128*int(self.sz1/2)*int(self.sz1/2)))
+         
+        # third conv net
+        out2 = self.conv21(x2)
+        out2 = self.conv22(out2)
+        out2 = self.conv23(out2)
+        out2 = self.pool2(self.conv14(out2))
+        out2 = self.conv25(out2)
+        out2 = self.conv26(out2)
+        out2 = self.conv27(out2)
+        out2 = self.outblock2(out2.view(-1, 128*int(self.sz1/2)*int(self.sz1/2)))
+        
+        # combine all 3 outputs to make a single prediction
+        out = torch.cat((out0,out1,out2),1)
+        out = self.fc(out)
+        return out
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, n):
+        super().__int__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.gn = nn.GroupNorm(n, out_channels)
+        self.relu - nn.LeakyReLU()
+
+    def forward(self, x):
+        return self.relu(self.gn(self.conv(x)))
+    
+class OutBlock(nn.Module):
+    def __init__(self, size, n):
+        super().__init__()
+        self.fc = nn.Linear(128*int(size/2)*int(size/2), 128)
+        self.gn = nn.GroupNorm(n,128)
+        self.relu = nn.LeakyReLU()
+        self.dropout = nn.Dropout()
+    
+    def forward(self, x):
+        return self.dropout(self.relu(self.gn(self.fc(x))))
 
 class MLPnet(torch.nn.Module):
     def __init__(self, n_features, n_hidden='500,100', n_output=20, mid_channels=None,
