@@ -2,16 +2,19 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 import numpy as np
-from .utility import _instantiate_class, _handle_n_hidden, _init_weights
+from functools import reduce
+import operator
+from .utility import _instantiate_class, _handle_n_hidden, _init_weights, _compute_out_size
 
-net_name = ['StarNet', 'MLPnet', 'ConvSeqEncoder']
-
+net_name = ['StarNet', 'MLPnet', 'ConvSeqEncoder', 'StarcNet', 'OTrain']
 
 def get_network(network_name):
     map = {
         'StarNet': StarNet,
         'MLP': MLPnet,
-        'ConvSeqEncoder': ConvSeqEncoder
+        'ConvSeqEncoder': ConvSeqEncoder,
+        'StarcNet': StarcNet,
+        'OTRAIN': OTrain
     }
 
     if network_name in map.keys():
@@ -19,7 +22,6 @@ def get_network(network_name):
     else:
         raise NotImplementedError(f"Network {network_name} not found!"
                                   f" Available networks: {map.keys()}")
-
 
 class StarNet(nn.Module):
     '''
@@ -29,14 +31,15 @@ class StarNet(nn.Module):
                  pool_length=4, num_hidden=[256, 128], num_labels=3):
         super(StarNet, self).__init__()
 
+        self.num_labels = num_labels
+
         self.conv1 = nn.Conv1d(1, num_filters[0], filter_length)
         self.conv2 = nn.Conv1d(num_filters[0], num_filters[1], filter_length)
         self.pool = nn.MaxPool1d(pool_length, pool_length)
 
-        pool_output_shape = self.compute_out_size((1, num_fluxes),
-                                                  nn.Sequential(self.conv1,
-                                                                self.conv2,
-                                                                self.pool))
+        pool_output_shape = _compute_out_size((1, num_fluxes), nn.Sequential(self.conv1, 
+                                                                             self.conv2, 
+                                                                             self.pool))
 
         self.fc1 = nn.Linear(
             pool_output_shape[0]*pool_output_shape[1], num_hidden[0])
@@ -53,14 +56,9 @@ class StarNet(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.output(x)
 
+        if self.num_labels == 1:
+            x = F.relu(x)
         return x
-
-    def compute_out_size(self, in_size, mod):
-        """
-        Compute output size of Module `mod` given an input with size `in_size`.
-        """
-        f = mod.forward(torch.autograd.Variable(torch.Tensor(1, *in_size)))
-        return f.size()[1:]
 
 class StarcNet(nn.Module):
     '''
@@ -73,8 +71,8 @@ class StarcNet(nn.Module):
         self.a2 = 1
         self.a3 = 1
         n = 8 # for groupnorm
-        self.sz1 = 32 # size of input image (sz1 x sz1)
-        self.sz = 10 # for secon input size (2*sz x 2*sz) default: 10
+        self.sz1 = image_size # size of input image (sz1 x sz1)
+        self.sz = mag_dim # for secon input size (2*sz x 2*sz) default: 10
         
         self.conv01 = ConvBlock(input_dim, 128, n)
         self.conv02 = ConvBlock(128, 128, n)
@@ -157,7 +155,7 @@ class ConvBlock(nn.Module):
         super().__int__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         self.gn = nn.GroupNorm(n, out_channels)
-        self.relu - nn.LeakyReLU()
+        self.relu = nn.LeakyReLU()
 
     def forward(self, x):
         return self.relu(self.gn(self.conv(x)))
@@ -173,7 +171,7 @@ class OutBlock(nn.Module):
     def forward(self, x):
         return self.dropout(self.relu(self.gn(self.fc(x))))
 
-class MLPnet(torch.nn.Module):
+class MLPnet(nn.Module):
     def __init__(self, n_features, n_hidden='500,100', n_output=20, mid_channels=None,
                  activation='ReLU', bias=False, batch_norm=False,
                  skip_connection=None, dropout=None):
@@ -225,7 +223,7 @@ class MLPnet(torch.nn.Module):
             raise NotImplementedError('')
         return in_channels, out_channels
     
-class LinearBlock(torch.nn.Module):
+class LinearBlock(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None,
                  activation='Tanh', bias=False, batch_norm=False,
                  skip_connection=None, dropout=None):
@@ -265,7 +263,7 @@ class LinearBlock(torch.nn.Module):
 
         return x1
     
-class ConvSeqEncoder(torch.nn.Module):
+class ConvSeqEncoder(nn.Module):
     """
     this network architecture is from NeurTraL-AD
     """
@@ -313,8 +311,7 @@ class ConvSeqEncoder(torch.nn.Module):
         z = self.final_layer(z)
         return z.squeeze(-1)
 
-
-class ConvResBlock(torch.nn.Module):
+class ConvResBlock(nn.Module):
     def __init__(self, in_dim, out_dim, conv_param=None, down_sample=None,
                  batch_norm=False, bias=False, activation='ReLU'):
         super(ConvResBlock, self).__init__()
@@ -369,3 +366,50 @@ class ConvResBlock(torch.nn.Module):
         out = self.act(out)
 
         return out
+    
+class OTrain(nn.Module):
+    '''
+    OTRAIN network constructed from O’TRAIN: A robust and flexible ‘real or bogus’ classifier for thestudy of the optical transient sky
+    '''
+    def __init__(self, num_channels=1, size=(32,32), num_classes=2, dropout=0.3, hidden_dims = [512,256], filter_size = (3,3), pool_size = (2,2)):
+        super(OTrain, self).__init__()
+        
+
+        self.conv1 = nn.Conv2d(num_channels, 16, filter_size)
+        self.conv2 = nn.Conv2d(16, 32, filter_size)
+        self.pool1 = nn.AvgPool2d(pool_size)
+        self.dropout1 = nn.Dropout(p=dropout)
+        self.conv3 = nn.Conv2d(32, 64, filter_size)
+        self.pool2 = nn.MaxPool2d(pool_size)
+        self.dropout2 = nn.Dropout(p=dropout)
+        self.conv4 = nn.Conv2d(64, 128, filter_size)
+        self.conv5 = nn.Conv2d(128, 256, filter_size)
+        self.pool3 = nn.MaxPool2d(pool_size)
+
+        
+        output_shape = _compute_out_size((num_channels, *(size)),nn.Sequential(self.conv1, self.conv2, 
+                                                                             self.pool1, self.dropout1, 
+                                                                             self.conv3, self.pool2, 
+                                                                             self.dropout2, self.conv4, 
+                                                                             self.conv5, self.pool3))
+        
+        self.fc1 = nn.Linear(reduce(operator.mul, output_shape), hidden_dims[0])
+        self.dropout3 = nn.Dropout(p=dropout)
+        self.fc2 = nn.Linear(hidden_dims[0], hidden_dims[1])
+        self.fc3 = nn.Linear(hidden_dims[1], num_classes)
+        
+    def forward(self, x):
+        
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = self.dropout1(self.pool1(x))
+        x = F.relu(self.conv3(x))
+        x = self.dropout2(self.pool2(x))
+        x = F.relu(self.conv4(x))
+        x = F.relu(self.conv5(x))
+        x = self.pool3(x)
+        x = torch.flatten(x, 1)
+        
+        x = F.softmax(self.fc3(self.fc2(self.dropout3(self.fc1(x)))))
+        
+        return x

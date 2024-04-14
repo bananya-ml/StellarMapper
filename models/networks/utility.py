@@ -37,3 +37,10 @@ def _init_weights(module):
         nn.init.kaiming_uniform_(module.weight, mode='fan_out', nonlinearity='relu')
         if module.bias is not None:
             nn.init.constant_(module.bias, 0)
+
+def _compute_out_size(in_size, mod):
+        """
+        Compute output size of Module `mod` given an input with size `in_size`.
+        """
+        f = mod.forward(torch.autograd.Variable(torch.Tensor(1, *in_size)))
+        return f.size()[1:]

@@ -61,8 +61,8 @@ class BaseModel(metaclass=ABCMeta):
         
         self.train_loader, self.val_loader, self.net, self.criterion, self.optimizer = self.training_prepare(
             self.train_data, y=self.train_label)
-        self._training()
-        return
+        train_loss, val_loss = self._training()
+        return train_loss, val_loss
 
     def predict(self, X, y=None):
         '''
@@ -91,6 +91,8 @@ class BaseModel(metaclass=ABCMeta):
 
     def _training(self):
 
+        train_losses = {}
+        val_losses = {}
         self.net.train()
         for epoch in range(self.epochs):
             
@@ -115,7 +117,9 @@ class BaseModel(metaclass=ABCMeta):
             if epoch == 0 or ((epoch + 1) % self.prt_interval == 0) or (epoch == self.epochs - 1):
                 print("Epoch: {:3d},  training loss: {:.6f}, validation loss: {:.6f} ".format(
                             epoch+1, train_loss, val_loss))
-        return
+                train_losses[epoch+1] = train_loss
+                val_losses[epoch+1] = val_loss
+        return train_losses, val_losses
 
     def _inference(self):
         

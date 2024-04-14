@@ -33,10 +33,11 @@ The `datasets` directory contains organized subdirectories named after the origi
 
 ## Implemented Models
 
-|Model   |Title                                                                            |
-|--------|---------------------------------------------------------------------------------|
-|StarNet |An application of deep learning in the analysis of stellar spectra<sup>[1](#sfabbro)</sup>|
-|STARCNET|StarcNet: Machine Learning for Star Cluster Identification<sup>[2](#gperez)</sup>         |
+|Model   |Title                                                                                                                        |
+|--------|-----------------------------------------------------------------------------------------------------------------------------|
+|StarNet |An application of deep learning in the analysis of stellar spectra<sup>[1](#sfabbro)</sup>                                   |
+|STARCNET|StarcNet: Machine Learning for Star Cluster Identification<sup>[2](#gperez)</sup>                                            |
+|OTRAIN  |O’TRAIN: A robust and flexible ‘real or bogus’ classifier for thestudy of the optical transient sky<sup>[3](#kmakhlouf)</sup>|
 
 ## License
 
@@ -50,3 +51,4 @@ The `datasets` directory contains organized subdirectories named after the origi
   Identification, The Astrophysical Journal](https://iopscience.iop.org/article/10.3847/1538-4357/abceba)
 - <a name="mpant"></a>[M Pantaleoni González, J Maíz Apellániz, R H Barbá, B Cameron Reed, The Alma catalogue of OB stars – II. A cross-match with Gaia DR2 and an updated map of the solar neighbourhood, Monthly 
   Notices of the Royal Astronomical Society, Volume 504, Issue 2, June 2021, Pages 2968–2982](https://doi.org/10.1093/mnras/stab688)
+- <a name="kmakhlouf"></a>[Makhlouf, K. and Turpin, D. and Corre, D. and Karpov, S. and Kann, D. A. and Klotz, A., O’TRAIN: A robust and flexible ‘real or bogus’ classifier for thestudy of the optical transient sky](http://dx.doi.org/10.1051/0004-6361/202142952)
